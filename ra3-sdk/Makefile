@@ -26,14 +26,26 @@ BINEXT=
 LIBEXT=.so
 
 CFLAGS = -MMD -fPIC
-LDFLAGS = -shared -lpthread -Wl,-Map,$(OBJDIR)/qagamei386.map
+
+UNAME := $(shell uname)
+LDFLAGS = -shared -lpthread
+
+ifeq ($(UNAME), Darwin)
+    SED_INPLACE := sed -i ''
+    LDFLAGS += -Wl,-map,$(OBJDIR)/qagamearm64.map -undefined dynamic_lookup
+else
+    SED_INPLACE := sed -i
+    LDFLAGS += -Wl,-Map,$(OBJDIR)/qagamei386.map
+endif
 
 ifeq ($(CONFIGURATION),debug)
   CFLAGS += -O0
 endif
 
 ifneq ($(ENABLE_LINKER_SCRIPT),0)
-  LDFLAGS += -T qagamei386.lds
+  ifneq ($(UNAME), Darwin)
+    LDFLAGS += -T qagamei386.lds
+  endif
 endif
 
 ifeq ($(V),1)
@@ -55,8 +67,8 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.c
 	$(ECHO) "CC $<"
 	$(Q)cd $(dir $<) && \
 	$(CC) $(CFLAGS) -o $(CURDIR)/$@ -c $(notdir $<) && \
-	sed -i 's#$(CURDIR)/##g' $(CURDIR)/$(OBJDIR)/$*.d && \
-	sed -i 's#\([^ ]\+\.[c|h]\)#$(dir $<)\1#g' $(CURDIR)/$(OBJDIR)/$*.d
+	$(SED_INPLACE) 's#$(CURDIR)/##g' $(CURDIR)/$(OBJDIR)/$*.d && \
+	$(SED_INPLACE) 's#\([^ ]\+\.[c|h]\)#$(dir $<)\1#g' $(CURDIR)/$(OBJDIR)/$*.d
 
 # ------------------------------------------------------------------------------
 # tools rules
@@ -264,10 +276,18 @@ else
   GAME_OBJ = $(GAME_SRC:$(SRCDIR)/%.c=$(OBJDIR)/%.o)
 
   $(SQLITE_OBJ): CFLAGS+=-DNO_TCL
+
+ifeq ($(UNAME), Darwin)
+  $(OBJDIR)/sqlite/sql_shell.o: CFLAGS+=-D_POSIX_C_SOURCE=200112L
+  $(HTTPD_OBJ): CFLAGS+=-std=gnu89
+  $(GAME_OBJ): CFLAGS+=-Wall -DQAGAME -D__useconds_t=useconds_t
+  QAGAME = $(OBJDIR)/qagamearm64.dylib
+else
   $(GAME_OBJ): CFLAGS+=-Werror -Wall -DQAGAME
+  QAGAME = $(OBJDIR)/qagamei386.so
+endif
 
   QAGAME_OBJ = $(SQLITE_OBJ) $(HTTPD_OBJ) $(GAME_OBJ)
-  QAGAME = $(OBJDIR)/qagamei386.so
 
   $(QAGAME): $(QAGAME_OBJ)
 	$(ECHO) "LD $@"
